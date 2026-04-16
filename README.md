@@ -1,74 +1,79 @@
-# NBA MVP Vote Prediction using a Season Aware Stacked Ensemble
 
-This project predicts NBA MVP voting points using a machine learning pipeline built on player performance, efficiency, availability, and team success features.
+# NBA MVP Prediction Dashboard Prototype
 
-## Project Overview
+This repository contains an interactive Streamlit prototype for NBA MVP vote prediction. It is designed to satisfy the prototype development requirement by providing a web-based interface that dynamically updates predictions and visualizations.
 
-The goal of this project is to predict `Pts Won` in NBA MVP voting and compare multiple regression based approaches. Since MVP prediction is not only a regression task but also a ranking task, the project evaluates both numeric prediction quality and season wise ranking quality.
+## Features
 
-This project includes:
+- season selector for held-out test seasons
+- model selector for multiple trained regressors
+- dynamic MVP leaderboard with predicted and actual rankings
+- player comparison panel
+- what-if simulator for adjusting player statistics and predicting MVP vote points in real time
 
-- season aware train validation test split
-- feature engineering for basketball specific metrics
-- simple baselines such as Dummy Mean, Linear Regression, and Ridge
-- advanced models including Random Forest, XGBoost, LightGBM, Gradient Boosting, and CatBoost
-- a team proposed stacked ensemble using out of fold predictions
-- regression metrics and ranking based metrics
+## Why this counts as prototype development
 
-## Main Notebook
+This app is not a static notebook visualization. It is an interactive web interface where users can:
+- query results by season
+- switch between models
+- compare players dynamically
+- change input features and get new predictions instantly
 
-- `881_Project_Notebook_Redesigned_Stacking.ipynb`
+That makes it a valid prototype under the project requirement.
 
-## Proposed Method
+## Files
 
-The main proposed method is a **season aware stacked ensemble**.
+- `app.py` — main Streamlit application
+- `requirements.txt` — Python dependencies
+- `README.md` — project instructions
+- `cleaned_data.csv` — expected dataset file placed next to `app.py`
 
-### Stacking design
+## How to run locally
 
-**Base models**
-- LightGBM
-- Gradient Boosting
-- CatBoost
-
-**Meta learner**
-- Ridge Regression
-
-**Meta features**
-- out of fold predictions from base models
-- optional passthrough basketball features such as PPG, APG, RPG, Win Rate, TS%, and Games Played
-
-### Why this method
-
-Different models capture different nonlinear relationships in MVP voting. Instead of selecting a single model, stacking learns how to combine multiple strong regressors while avoiding leakage through out of fold training predictions.
-
-## Evaluation Metrics
-
-The project reports:
-
-- RMSE
-- MAE
-- R²
-- Top1 Accuracy by season
-- Top5 Overlap by season
-
-These metrics help evaluate both vote point prediction quality and actual MVP ranking quality.
-
-## Dataset
-
-The notebook expects a cleaned CSV file:
-
-- `cleaned_data.csv`
-
-Make sure this file is placed in the same directory as the notebook, or update the path in the configuration section.
-
-## How to Run
-
-1. Clone the repository
+1. Put `cleaned_data.csv` in the same folder as `app.py`
 2. Install dependencies
-3. Place `cleaned_data.csv` in the project directory
-4. Open the notebook and run all cells
-
-## Suggested Dependencies
+3. Start Streamlit
 
 ```bash
-pip install pandas numpy matplotlib scikit-learn xgboost lightgbm catboost jupyter
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+## Expected columns
+
+The app expects:
+- `Pts Won` as the target column
+- one season column like `Year` or `Season`
+- one player column like `Player`
+
+It also works best if the dataset contains basketball features such as:
+- `PPG`
+- `APG`
+- `RPG`
+- `W`
+- `L`
+- `G`
+- `TS%`
+- `Age`
+
+## Suggested GitHub repo structure
+
+```text
+.
+├── app.py
+├── requirements.txt
+├── README.md
+└── cleaned_data.csv
+```
+
+## Deployment options
+
+You can deploy this app using:
+- Streamlit Community Cloud
+- Render
+- Hugging Face Spaces
+- local demo on your machine
+
+## Author
+
+Yash Bhawarkar
