@@ -23,9 +23,32 @@ st.set_page_config(page_title="NBA MVP Prediction Dashboard", page_icon="🏀", 
 
 st.markdown("""
     <style>
-    [data-testid="stMetricValue"] { font-size: 1.8rem; font-weight: 700; color: #1E3A8A; }
-    [data-testid="stMetric"] { background-color: white; padding: 15px; border-radius: 10px; border: 1px solid #e5e7eb; }
-    .stTabs [aria-selected="true"] { background-color: #1E3A8A !important; color: white !important; }
+    [data-testid="stMetric"] {
+        background-color: white;
+        padding: 15px !important;
+        border-radius: 10px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.5rem !important;
+        font-weight: 700;
+        color: #1E3A8A;
+        white-space: normal !important; 
+        word-break: break-word;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.85rem !important;
+        white-space: normal !important;
+        color: #4B5563;
+    }
+    [data-testid="stTooltipIcon"] svg {
+        fill: #1E3A8A !important;
+    }
+    .stTabs [aria-selected="true"] { 
+        background-color: #1E3A8A !important; 
+        color: white !important; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -463,10 +486,27 @@ tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Leaderboard", "Head-to-Head", "Si
 with tab1:
     c1, c2, c3, c4 = st.columns(4)
     best_row = results_df.iloc[0]
-    c1.metric("Top Model", best_row["Model"])
-    c2.metric("Min RMSE", f"{best_row['RMSE']:.2f}")
-    c3.metric("Top1 Acc", f"{results_df['Top1 Acc'].max():.2f}")
-    c4.metric("Avg R²", f"{results_df['R²'].mean():.2f}")
+    
+    c1.metric(
+        label="Top Model", 
+        value=best_row["Model"], 
+        help="The algorithm that achieved the lowest error during validation."
+    )
+    c2.metric(
+        label="Min RMSE", 
+        value=f"{best_row['RMSE']:.2f}", 
+        help="Root Mean Squared Error: The average 'miss' in points. Lower is better."
+    )
+    c3.metric(
+        label="Top1 Acc", 
+        value=f"{results_df['Top1 Acc'].max():.2f}", 
+        help="How often the model correctly predicts the actual MVP winner."
+    )
+    c4.metric(
+        label="Avg R²", 
+        value=f"{results_df['R²'].mean():.2f}", 
+        help="How much of the voting data variance the AI successfully explains (Goal: 1.0)."
+    )
 
     st.subheader("Model Error Comparison (RMSE)")
     st.dataframe(results_df, use_container_width=True)
@@ -533,3 +573,11 @@ with tab4:
             sim_model, _ = fit_model_for_simulator(bundle, selected_model)
             pred = float(np.clip(sim_model.predict(sample)[0], 0, None))
         st.success(f"Predicted Points: {pred:.2f}")
+        if pred > 300:
+            st.info("This profile looks like a very strong MVP-level season.")
+        elif pred > 100:
+            st.info("This profile looks like a serious MVP candidate.")
+        elif pred > 0:
+            st.info("This profile may receive some MVP votes.")
+        else:
+            st.info("This profile is unlikely to receive MVP votes based on the model.")
