@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+import math
 
 from sklearn.base import clone
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
@@ -19,6 +20,14 @@ from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
 
 st.set_page_config(page_title="NBA MVP Prediction Dashboard", page_icon="🏀", layout="wide")
+
+st.markdown("""
+    <style>
+    [data-testid="stMetricValue"] { font-size: 1.8rem; font-weight: 700; color: #1E3A8A; }
+    [data-testid="stMetric"] { background-color: white; padding: 15px; border-radius: 10px; border: 1px solid #e5e7eb; }
+    .stTabs [aria-selected="true"] { background-color: #1E3A8A !important; color: white !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
 DATA_PATH = Path("cleaned_data.csv")
 TARGET_COL = "Pts Won"
@@ -413,6 +422,20 @@ def predict_with_stacked_simulator(bundle, sample_df):
     pred = float(np.clip(stack_bundle["meta_model"].predict(meta_row)[0], 0, None))
     return pred
 
+def draw_radar_chart(player_stats, labels):
+    num_vars = len(labels)
+    angles = [n / float(num_vars) * 2 * np.pi for n in range(num_vars)]
+    angles += angles[:1]
+    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    for name, stats in player_stats.items():
+        vals = stats + stats[:1]
+        ax.plot(angles, vals, linewidth=2, label=name)
+        ax.fill(angles, vals, alpha=0.1)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels)
+    plt.legend(loc='upper right', bbox_to_anchor=(1.1, 1.1))
+    return fig
+
 st.title("🏀 NBA MVP Prediction Dashboard")
 st.caption("Interactive MVP prediction app with leaderboard, player comparison, and what-if analysis.")
 
@@ -431,150 +454,82 @@ results_df = bundle["results_df"]
 with st.sidebar:
     st.header("Controls")
     available_models = list(bundle["predictions"].keys())
-    default_model = "Proposed Stacked Ensemble" if "Proposed Stacked Ensemble" in available_models else available_models[0]
-    selected_model = st.selectbox("Choose model", available_models, index=available_models.index(default_model))
+    selected_model = st.selectbox("Choose model", available_models, index=len(available_models)-1)
     selected_test_season = st.selectbox("Choose test season", bundle["test_seasons"], index=len(bundle["test_seasons"]) - 1)
     top_n = st.slider("Top N leaderboard", 5, 20, 10)
 
-tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Season Leaderboard", "Player Comparison", "What-if Simulator"])
+tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Leaderboard", "Head-to-Head", "Simulator"])
 
 with tab1:
-    c1, c2, c3 = st.columns(3)
-    best_model_row = results_df.iloc[0]
-    c1.metric("Best model by RMSE", best_model_row["Model"])
-    c2.metric("Best RMSE", f"{best_model_row['RMSE']:.2f}")
-    c3.metric("Best Top1 Accuracy", f"{results_df['Top1 Acc'].max():.2f}")
+    c1, c2, c3, c4 = st.columns(4)
+    best_row = results_df.iloc[0]
+    c1.metric("Top Model", best_row["Model"])
+    c2.metric("Min RMSE", f"{best_row['RMSE']:.2f}")
+    c3.metric("Top1 Acc", f"{results_df['Top1 Acc'].max():.2f}")
+    c4.metric("Avg R²", f"{results_df['R²'].mean():.2f}")
 
-    st.subheader("Model comparison on held-out test seasons")
+    st.subheader("Model Error Comparison (RMSE)")
     st.dataframe(results_df, use_container_width=True)
 
-    fig = plt.figure(figsize=(8, 4))
-    plt.bar(results_df["Model"], results_df["RMSE"])
+    fig = plt.figure(figsize=(10, 4))
+    colors = ['#1E3A8A' if x == results_df['RMSE'].min() else '#D1D5DB' for x in results_df['RMSE']]
+    plt.bar(results_df["Model"], results_df["RMSE"], color=colors)
     plt.xticks(rotation=45, ha="right")
-    plt.ylabel("RMSE")
-    plt.title("Test RMSE by Model")
-    plt.tight_layout()
     st.pyplot(fig)
 
 with tab2:
     leaderboard_df, full_season_df = get_season_leaderboard(bundle, selected_model, selected_test_season)
-    st.subheader(f"Predicted MVP leaderboard — {selected_test_season} — {selected_model}")
+    st.subheader(f"MVP Forecast — {selected_test_season}")
 
-    colA, colB = st.columns(2)
-    predicted_mvp = leaderboard_df.iloc[0][player_col]
-    actual_mvp = full_season_df.sort_values(TARGET_COL, ascending=False).iloc[0][player_col]
-    colA.metric("Predicted MVP", str(predicted_mvp))
-    colB.metric("Actual MVP", str(actual_mvp))
-
-    st.dataframe(leaderboard_df.head(top_n), use_container_width=True)
-
-    plot_df = leaderboard_df.head(top_n).copy()
-    col1, col2 = st.columns(2)
-    with col1:
-        fig1 = plt.figure(figsize=(7, 4))
-        plt.bar(plot_df[player_col].astype(str), plot_df["Predicted_Pts_Won"])
-        plt.xticks(rotation=45, ha="right")
-        plt.ylabel("Predicted Pts Won")
-        plt.title(f"Top {top_n} Predicted MVP Candidates")
-        plt.tight_layout()
-        st.pyplot(fig1)
-
-    with col2:
-        actual_top = full_season_df.sort_values(TARGET_COL, ascending=False).head(top_n)
-        fig2 = plt.figure(figsize=(7, 4))
-        plt.bar(actual_top[player_col].astype(str), actual_top[TARGET_COL])
-        plt.xticks(rotation=45, ha="right")
-        plt.ylabel("Actual Pts Won")
-        plt.title(f"Top {top_n} Actual MVP Candidates")
-        plt.tight_layout()
-        st.pyplot(fig2)
+    st.dataframe(
+        leaderboard_df.head(top_n),
+        column_config={
+            "Predicted_Pts_Won": st.column_config.ProgressColumn(
+                "Score", min_value=0, max_value=float(leaderboard_df["Predicted_Pts_Won"].max()), format="%.1f"
+            ),
+            "Win_Rate": st.column_config.NumberColumn("Win %", format="%.3f"),
+        },
+        use_container_width=True, hide_index=True
+    )
 
 with tab3:
-    st.subheader("Player comparison")
-    season_df = df[df[season_col] == selected_test_season].copy()
-    player_names = sorted(season_df[player_col].astype(str).unique().tolist())
+    st.subheader("Skill Comparison (Normalized)")
+    p_names = sorted(df[df[season_col] == selected_test_season][player_col].unique())
+    p1 = st.selectbox("Player A", p_names, index=0)
+    p2 = st.selectbox("Player B", p_names, index=min(1, len(p_names)-1))
 
-    left_name = st.selectbox("Player A", player_names, index=0, key="player_a")
-    right_name = st.selectbox("Player B", player_names, index=min(1, len(player_names)-1), key="player_b")
-
-    _, season_pred_df = get_season_leaderboard(bundle, selected_model, selected_test_season)
-    left_row = season_pred_df[season_pred_df[player_col].astype(str) == left_name].iloc[0]
-    right_row = season_pred_df[season_pred_df[player_col].astype(str) == right_name].iloc[0]
-
-    compare_cols = [c for c in [player_col, team_col, "Predicted_Pts_Won", TARGET_COL, "PPG", "APG", "RPG", "Win_Rate", "TS%", "G"] if c and c in season_pred_df.columns]
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"### {left_name}")
-        st.dataframe(pd.DataFrame({"Value": left_row[compare_cols]}), use_container_width=True)
-    with col2:
-        st.markdown(f"### {right_name}")
-        st.dataframe(pd.DataFrame({"Value": right_row[compare_cols]}), use_container_width=True)
-
-    stat_cols = [c for c in ["PPG", "APG", "RPG", "Win_Rate", "TS%", "G"] if c in season_pred_df.columns]
-    if stat_cols:
-        fig = plt.figure(figsize=(8, 4))
-        x = np.arange(len(stat_cols))
-        width = 0.35
-        plt.bar(x - width/2, [left_row[c] for c in stat_cols], width=width, label=left_name)
-        plt.bar(x + width/2, [right_row[c] for c in stat_cols], width=width, label=right_name)
-        plt.xticks(x, stat_cols, rotation=45, ha="right")
-        plt.title(f"{left_name} vs {right_name}")
-        plt.legend()
-        plt.tight_layout()
-        st.pyplot(fig)
+    stats_list = ["PPG", "RPG", "APG", "Win_Rate", "TS%"]
+    p1_vals = [df[df[player_col]==p1][s].mean() / df[s].max() for s in stats_list]
+    p2_vals = [df[df[player_col]==p2][s].mean() / df[s].max() for s in stats_list]
+    
+    st.pyplot(draw_radar_chart({p1: p1_vals, p2: p2_vals}, stats_list))
 
 with tab4:
-    st.subheader("What-if MVP vote predictor")
-    st.write("Change player statistics and get an updated predicted MVP vote score.")
-
-    base_choice = st.selectbox("Start from an existing player profile", ["Average profile"] + sorted(df[player_col].astype(str).unique().tolist()))
-    base_row = None if base_choice == "Average profile" else df[df[player_col].astype(str) == base_choice].iloc[0]
-
-    cols = st.columns(3)
-    overrides = {}
+    st.subheader("What-if MVP Predictor")
+    with st.expander("Step 1: Choose Baseline"):
+        base_choice = st.selectbox("Existing profile", ["Average"] + sorted(df[player_col].unique()))
+        base_row = None if base_choice == "Average" else df[df[player_col] == base_choice].iloc[0]
 
     def default_for(col_name, fallback):
-        if base_row is not None and col_name in base_row.index and pd.notna(base_row[col_name]):
-            return float(base_row[col_name])
-        if col_name in df.columns:
-            return float(pd.to_numeric(df[col_name], errors="coerce").median())
+        if base_row is not None and col_name in base_row.index: return float(base_row[col_name])
         return fallback
 
-    with cols[0]:
-        if "PPG" in df.columns:
-            overrides["PPG"] = st.number_input("PPG", value=default_for("PPG", 20.0), step=0.5)
-        if "APG" in df.columns:
-            overrides["APG"] = st.number_input("APG", value=default_for("APG", 5.0), step=0.5)
-        if "RPG" in df.columns:
-            overrides["RPG"] = st.number_input("RPG", value=default_for("RPG", 6.0), step=0.5)
-    with cols[1]:
-        if "Win_Rate" in df.columns:
-            overrides["Win_Rate"] = st.slider("Win Rate", 0.0, 1.0, float(default_for("Win_Rate", 0.65)), 0.01)
-        if "TS%" in df.columns:
-            ts_default = max(0.0, min(1.0, float(default_for("TS%", 0.58))))
-            overrides["TS%"] = st.slider("TS%", 0.0, 1.0, ts_default, 0.01)
-        if "G" in df.columns:
-            overrides["G"] = st.slider("Games Played", 0, 82, int(default_for("G", 70)), 1)
-    with cols[2]:
-        if "Age" in df.columns:
-            overrides["Age"] = st.slider("Age", 19, 40, int(default_for("Age", 27)), 1)
-        if "Avail_Rate" in df.columns:
-            ar_default = max(0.0, min(1.0, float(default_for("Avail_Rate", 0.85))))
-            overrides["Avail_Rate"] = st.slider("Availability Rate", 0.0, 1.0, ar_default, 0.01)
+    c1, c2, c3 = st.columns(3)
+    overrides = {}
+    with c1:
+        overrides["PPG"] = st.number_input("PPG", 0.0, 50.0, default_for("PPG", 20.0))
+        overrides["APG"] = st.number_input("APG", 0.0, 20.0, default_for("APG", 5.0))
+    with c2:
+        overrides["Win_Rate"] = st.slider("Win Rate", 0.0, 1.0, default_for("Win_Rate", 0.5))
+        overrides["TS%"] = st.slider("TS%", 0.3, 0.8, default_for("TS%", 0.55))
+    with c3:
+        overrides["G"] = st.slider("Games", 0, 82, int(default_for("G", 70)))
 
-    if st.button("Predict MVP Vote Points"):
+    if st.button("Predict Score"):
         sample = build_simulator_input(bundle, base_row, overrides)
         if selected_model == "Proposed Stacked Ensemble":
             pred = predict_with_stacked_simulator(bundle, sample)
         else:
-            simulator_model, _ = fit_model_for_simulator(bundle, selected_model)
-            pred = float(np.clip(simulator_model.predict(sample)[0], 0, None))
-        st.success(f"Predicted Pts Won using {selected_model}: {pred:.2f}")
-        if pred > 300:
-            st.info("This profile looks like a very strong MVP-level season.")
-        elif pred > 100:
-            st.info("This profile looks like a serious MVP candidate.")
-        elif pred > 0:
-            st.info("This profile may receive some MVP votes.")
-        else:
-            st.info("This profile is unlikely to receive MVP votes based on the model.")
+            sim_model, _ = fit_model_for_simulator(bundle, selected_model)
+            pred = float(np.clip(sim_model.predict(sample)[0], 0, None))
+        st.success(f"Predicted Points: {pred:.2f}")
