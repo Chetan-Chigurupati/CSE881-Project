@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-import math
 
 from sklearn.base import clone
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
@@ -34,7 +33,7 @@ st.markdown("""
         font-size: 1.5rem !important;
         font-weight: 700;
         color: #1E3A8A;
-        white-space: normal !important; 
+        white-space: normal !important;
         word-break: break-word;
     }
     [data-testid="stMetricLabel"] {
@@ -45,14 +44,15 @@ st.markdown("""
     [data-testid="stTooltipIcon"] svg {
         fill: #1E3A8A !important;
     }
-    .stTabs [aria-selected="true"] { 
-        background-color: #1E3A8A !important; 
-        color: white !important; 
+    .stTabs [aria-selected="true"] {
+        background-color: #1E3A8A !important;
+        color: white !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-DATA_PATH = Path("cleaned_data.csv")
+TRAIN_DATA_PATH = Path("cleaned_data.csv")
+DEFAULT_INFERENCE_DATA_PATH = Path("api_data.csv")
 TARGET_COL = "Pts Won"
 SEASON_CANDIDATES = ["Year", "Season", "season", "year"]
 PLAYER_CANDIDATES = ["Player", "player", "Name", "PlayerName"]
@@ -62,14 +62,17 @@ VAL_SEASONS_N = 2
 RANDOM_STATE = 42
 RIDGE_ALPHA_GRID = [0.01, 0.1, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0]
 
+
 def find_first_existing(df, candidates):
     for c in candidates:
         if c in df.columns:
             return c
     return None
 
+
 def rmse(y_true, y_pred):
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
 
 def season_top1_accuracy(eval_df, pred_col, actual_col, season_col, player_col):
     scores = []
@@ -79,6 +82,7 @@ def season_top1_accuracy(eval_df, pred_col, actual_col, season_col, player_col):
         scores.append(int(actual_top == pred_top))
     return float(np.mean(scores)) if scores else np.nan
 
+
 def season_topk_overlap(eval_df, pred_col, actual_col, season_col, player_col, k=5):
     overlaps = []
     for _, grp in eval_df.groupby(season_col):
@@ -86,6 +90,7 @@ def season_topk_overlap(eval_df, pred_col, actual_col, season_col, player_col, k
         pred_topk = set(grp.sort_values(pred_col, ascending=False).head(k)[player_col])
         overlaps.append(len(actual_topk.intersection(pred_topk)) / k)
     return float(np.mean(overlaps)) if overlaps else np.nan
+
 
 def evaluate_predictions(model_name, y_true, y_pred, eval_df, season_col, player_col):
     local_df = eval_df.copy()
@@ -98,6 +103,7 @@ def evaluate_predictions(model_name, y_true, y_pred, eval_df, season_col, player
         "Top1 Acc": season_top1_accuracy(local_df, "Predicted_Pts_Won", TARGET_COL, season_col, player_col),
         "Top5 Overlap": season_topk_overlap(local_df, "Predicted_Pts_Won", TARGET_COL, season_col, player_col, k=5),
     }
+
 
 def engineer_features(df):
     out = df.copy()
@@ -138,11 +144,14 @@ def engineer_features(df):
 
     return out
 
+
 @st.cache_data(show_spinner=False)
-def load_data():
-    if not DATA_PATH.exists():
-        raise FileNotFoundError(f"Could not find {DATA_PATH.resolve()}. Put cleaned_data.csv in the same folder as app.py.")
-    df = pd.read_csv(DATA_PATH)
+def load_training_data():
+    if not TRAIN_DATA_PATH.exists():
+        raise FileNotFoundError(
+            f"Could not find {TRAIN_DATA_PATH.resolve()}. Put cleaned_data.csv in the same folder as this app."
+        )
+    df = pd.read_csv(TRAIN_DATA_PATH)
     df = engineer_features(df)
 
     season_col = find_first_existing(df, SEASON_CANDIDATES)
@@ -158,6 +167,18 @@ def load_data():
 
     return df, season_col, player_col, team_col
 
+
+def read_inference_source(uploaded_file):
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        source_name = uploaded_file.name
+        return df, source_name
+    if DEFAULT_INFERENCE_DATA_PATH.exists():
+        df = pd.read_csv(DEFAULT_INFERENCE_DATA_PATH)
+        return df, DEFAULT_INFERENCE_DATA_PATH.name
+    return None, None
+
+
 def get_feature_cols(df, season_col, player_col, team_col):
     candidate_features = [
         "W", "L", "Win_Rate", "PS/G", "PA/G",
@@ -170,6 +191,7 @@ def get_feature_cols(df, season_col, player_col, team_col):
     if team_col:
         excluded.add(team_col)
     return [c for c in candidate_features if c in df.columns and c not in excluded and pd.api.types.is_numeric_dtype(df[c])]
+
 
 def build_models():
     return {
@@ -198,6 +220,7 @@ def build_models():
         ),
     }
 
+
 def build_stack_base_models():
     return {
         "LightGBM": LGBMRegressor(
@@ -213,6 +236,7 @@ def build_stack_base_models():
         ),
     }
 
+
 def split_by_recent_seasons(df, season_col):
     all_seasons = sorted(df[season_col].dropna().unique())
     if len(all_seasons) < (VAL_SEASONS_N + TEST_SEASONS_N + 1):
@@ -225,6 +249,7 @@ def split_by_recent_seasons(df, season_col):
     test_df = df[df[season_col].isin(test_seasons)].copy()
     return train_df, val_df, test_df, train_seasons, val_seasons, test_seasons
 
+
 def build_stacked_predictions(X_trainval, y_trainval, X_test, trainval_df, feature_cols, season_col):
     stack_base_models = build_stack_base_models()
     passthrough_cols = [c for c in ["PPG", "APG", "RPG", "Win_Rate", "TS%", "G"] if c in feature_cols]
@@ -236,7 +261,7 @@ def build_stacked_predictions(X_trainval, y_trainval, X_test, trainval_df, featu
     test_preds = np.zeros((len(X_test), len(stack_base_models)))
     model_names = list(stack_base_models.keys())
 
-    for model_idx, (model_name, model) in enumerate(stack_base_models.items()):
+    for model_idx, (_, model) in enumerate(stack_base_models.items()):
         fold_test_preds = np.zeros((len(X_test), n_splits))
         for fold_idx, (tr_idx, va_idx) in enumerate(gkf.split(X_trainval, y_trainval, groups=groups)):
             X_tr = X_trainval.iloc[tr_idx]
@@ -277,9 +302,57 @@ def build_stacked_predictions(X_trainval, y_trainval, X_test, trainval_df, featu
     final_pred = np.clip(meta_model.predict(X_meta_test), 0, None)
     return final_pred
 
+
+def fit_stacked_inference_model(X_full, y_full, groups, passthrough_cols):
+    stack_base_models = build_stack_base_models()
+    n_splits = min(5, groups.nunique())
+    gkf = GroupKFold(n_splits=n_splits)
+
+    oof_preds = np.zeros((len(X_full), len(stack_base_models)))
+    model_names = list(stack_base_models.keys())
+    fitted_base_models = {}
+
+    for model_idx, (model_name, model) in enumerate(stack_base_models.items()):
+        for tr_idx, va_idx in gkf.split(X_full, y_full, groups=groups):
+            fitted = clone(model)
+            fitted.fit(X_full.iloc[tr_idx], y_full.iloc[tr_idx])
+            oof_preds[va_idx, model_idx] = fitted.predict(X_full.iloc[va_idx])
+
+        final_fitted = clone(model)
+        final_fitted.fit(X_full, y_full)
+        fitted_base_models[model_name] = final_fitted
+
+    oof_df = pd.DataFrame(oof_preds, columns=model_names, index=X_full.index)
+    if passthrough_cols:
+        X_meta_train = pd.concat([oof_df.reset_index(drop=True), X_full[passthrough_cols].reset_index(drop=True)], axis=1)
+    else:
+        X_meta_train = oof_df.copy()
+
+    alpha_rows = []
+    for alpha in RIDGE_ALPHA_GRID:
+        fold_scores = []
+        for tr_idx, va_idx in gkf.split(X_meta_train, y_full, groups=groups):
+            ridge = Ridge(alpha=alpha)
+            ridge.fit(X_meta_train.iloc[tr_idx], y_full.iloc[tr_idx])
+            pred_va = np.clip(ridge.predict(X_meta_train.iloc[va_idx]), 0, None)
+            fold_scores.append(rmse(y_full.iloc[va_idx], pred_va))
+        alpha_rows.append((alpha, np.mean(fold_scores)))
+
+    best_alpha = sorted(alpha_rows, key=lambda x: x[1])[0][0]
+    meta_model = Ridge(alpha=best_alpha)
+    meta_model.fit(X_meta_train, y_full)
+
+    return {
+        "base_models": fitted_base_models,
+        "meta_model": meta_model,
+        "model_names": model_names,
+        "passthrough_cols": passthrough_cols,
+    }
+
+
 @st.cache_resource(show_spinner=True)
 def train_all_models():
-    df, season_col, player_col, team_col = load_data()
+    df, season_col, player_col, team_col = load_training_data()
     feature_cols = get_feature_cols(df, season_col, player_col, team_col)
     train_df, val_df, test_df, train_seasons, val_seasons, test_seasons = split_by_recent_seasons(df, season_col)
 
@@ -322,7 +395,72 @@ def train_all_models():
         "predictions": predictions,
         "results_df": results_df,
         "test_seasons": test_seasons,
+        "train_medians": train_medians,
     }
+
+
+def predict_inference_data(bundle, selected_model, uploaded_file=None):
+    inference_df, source_name = read_inference_source(uploaded_file)
+    if inference_df is None:
+        return None, "Upload a CSV for inference or place api_data.csv next to the app.", None
+
+    inference_df = engineer_features(inference_df)
+    infer_player_col = find_first_existing(inference_df, PLAYER_CANDIDATES)
+    infer_team_col = find_first_existing(inference_df, TEAM_CANDIDATES)
+
+    missing_features = [c for c in bundle["feature_cols"] if c not in inference_df.columns]
+    for col in missing_features:
+        inference_df[col] = bundle["train_medians"].get(col, 0)
+
+    X_infer = inference_df[bundle["feature_cols"]].copy().fillna(bundle["train_medians"])
+
+    if selected_model == "Proposed Stacked Ensemble":
+        train_df = bundle["df"]
+        season_col = bundle["season_col"]
+        passthrough_cols = [c for c in ["PPG", "APG", "RPG", "Win_Rate", "TS%", "G"] if c in bundle["feature_cols"]]
+
+        X_full = train_df[bundle["feature_cols"]].copy().fillna(bundle["train_medians"])
+        y_full = train_df[TARGET_COL].copy()
+        groups = train_df[season_col].copy()
+
+        stack_bundle = fit_stacked_inference_model(X_full, y_full, groups, passthrough_cols)
+
+        base_pred_cols = []
+        for model_name in stack_bundle["model_names"]:
+            pred = stack_bundle["base_models"][model_name].predict(X_infer)
+            base_pred_cols.append(pred)
+
+        meta_input = pd.DataFrame(np.column_stack(base_pred_cols), columns=stack_bundle["model_names"])
+        if stack_bundle["passthrough_cols"]:
+            meta_input = pd.concat(
+                [meta_input.reset_index(drop=True), X_infer[stack_bundle["passthrough_cols"]].reset_index(drop=True)],
+                axis=1,
+            )
+        pred_infer = np.clip(stack_bundle["meta_model"].predict(meta_input), 0, None)
+    else:
+        model = build_models()[selected_model]
+        X_full = bundle["df"][bundle["feature_cols"]].copy().fillna(bundle["train_medians"])
+        y_full = bundle["df"][TARGET_COL].copy()
+        model.fit(X_full, y_full)
+        pred_infer = np.clip(model.predict(X_infer), 0, None)
+
+    out = inference_df.copy()
+    out["Predicted_Pts_Won"] = pred_infer
+    display_cols = []
+    if infer_player_col:
+        display_cols.append(infer_player_col)
+    if infer_team_col:
+        display_cols.append(infer_team_col)
+    display_cols += ["Predicted_Pts_Won"]
+    for stat in ["PPG", "RPG", "APG", "Win_Rate", "TS%", "G", "Age"]:
+        if stat in out.columns and stat not in display_cols:
+            display_cols.append(stat)
+
+    out = out.sort_values("Predicted_Pts_Won", ascending=False).reset_index(drop=True)
+    out["Predicted Rank"] = np.arange(1, len(out) + 1)
+    final_cols = ["Predicted Rank"] + display_cols
+    return out[final_cols], None, source_name
+
 
 def get_season_leaderboard(bundle, model_name, selected_season):
     test_df = bundle["test_df"].copy()
@@ -347,120 +485,9 @@ def get_season_leaderboard(bundle, model_name, selected_season):
             cols.append(stat)
     return season_df[cols].copy(), season_df
 
-@st.cache_resource(show_spinner=True)
-def fit_stacked_simulator(df, season_col, feature_cols):
-    train_medians = df[feature_cols].median(numeric_only=True)
-    X_full = df[feature_cols].copy().fillna(train_medians)
-    y_full = df[TARGET_COL].copy()
-    groups = df[season_col].copy()
-
-    stack_base_models = build_stack_base_models()
-    passthrough_cols = [c for c in ["PPG", "APG", "RPG", "Win_Rate", "TS%", "G"] if c in feature_cols]
-    n_splits = min(5, groups.nunique())
-    gkf = GroupKFold(n_splits=n_splits)
-
-    oof_preds = np.zeros((len(X_full), len(stack_base_models)))
-    model_names = list(stack_base_models.keys())
-    fitted_base_models = {}
-
-    for model_idx, (model_name, model) in enumerate(stack_base_models.items()):
-        for tr_idx, va_idx in gkf.split(X_full, y_full, groups=groups):
-            fitted = clone(model)
-            fitted.fit(X_full.iloc[tr_idx], y_full.iloc[tr_idx])
-            oof_preds[va_idx, model_idx] = fitted.predict(X_full.iloc[va_idx])
-        final_fitted = clone(model)
-        final_fitted.fit(X_full, y_full)
-        fitted_base_models[model_name] = final_fitted
-
-    oof_df = pd.DataFrame(oof_preds, columns=model_names, index=X_full.index)
-    if passthrough_cols:
-        X_meta_train = pd.concat([oof_df.reset_index(drop=True), X_full[passthrough_cols].reset_index(drop=True)], axis=1)
-    else:
-        X_meta_train = oof_df.copy()
-
-    alpha_rows = []
-    for alpha in RIDGE_ALPHA_GRID:
-        fold_scores = []
-        for tr_idx, va_idx in gkf.split(X_meta_train, y_full, groups=groups):
-            ridge = Ridge(alpha=alpha)
-            ridge.fit(X_meta_train.iloc[tr_idx], y_full.iloc[tr_idx])
-            pred_va = np.clip(ridge.predict(X_meta_train.iloc[va_idx]), 0, None)
-            fold_scores.append(rmse(y_full.iloc[va_idx], pred_va))
-        alpha_rows.append((alpha, np.mean(fold_scores)))
-
-    best_alpha = sorted(alpha_rows, key=lambda x: x[1])[0][0]
-    meta_model = Ridge(alpha=best_alpha)
-    meta_model.fit(X_meta_train, y_full)
-
-    return {
-        "base_models": fitted_base_models,
-        "meta_model": meta_model,
-        "passthrough_cols": passthrough_cols,
-        "model_names": model_names,
-        "train_medians": train_medians,
-    }
-
-def fit_model_for_simulator(bundle, model_name):
-    df = bundle["df"]
-    feature_cols = bundle["feature_cols"]
-    train_medians = df[feature_cols].median(numeric_only=True)
-    X = df[feature_cols].copy().fillna(train_medians)
-    y = df[TARGET_COL].copy()
-    model = build_models()[model_name]
-    model.fit(X, y)
-    return model, train_medians
-
-def build_simulator_input(bundle, base_player_row, overrides):
-    feature_cols = bundle["feature_cols"]
-    train_medians = bundle["df"][feature_cols].median(numeric_only=True)
-
-    if base_player_row is not None:
-        row = base_player_row.copy()
-    else:
-        row = pd.Series({c: train_medians.get(c, 0) for c in feature_cols})
-
-    for key, value in overrides.items():
-        row[key] = value
-
-    if "W" in row.index and "L" in row.index and "Win_Rate" in feature_cols:
-        denom = row["W"] + row["L"]
-        row["Win_Rate"] = (row["W"] / denom) if denom else 0
-    if "PPG" in row.index and "Win_Rate" in row.index and "Scoring_Team_Impact" in feature_cols:
-        row["Scoring_Team_Impact"] = row["PPG"] * row["Win_Rate"]
-    if "TS%" in row.index and "Avail_Rate" in row.index and "Efficiency_Availability" in feature_cols:
-        row["Efficiency_Availability"] = row["TS%"] * row["Avail_Rate"]
-
-    frame = pd.DataFrame([{c: row.get(c, train_medians.get(c, 0)) for c in feature_cols}])
-    return frame.fillna(train_medians)
-
-def predict_with_stacked_simulator(bundle, sample_df):
-    stack_bundle = fit_stacked_simulator(bundle["df"], bundle["season_col"], bundle["feature_cols"])
-    base_pred_cols = []
-    for model_name in stack_bundle["model_names"]:
-        pred = stack_bundle["base_models"][model_name].predict(sample_df)[0]
-        base_pred_cols.append(pred)
-    meta_row = pd.DataFrame([base_pred_cols], columns=stack_bundle["model_names"])
-    if stack_bundle["passthrough_cols"]:
-        meta_row = pd.concat([meta_row.reset_index(drop=True), sample_df[stack_bundle["passthrough_cols"]].reset_index(drop=True)], axis=1)
-    pred = float(np.clip(stack_bundle["meta_model"].predict(meta_row)[0], 0, None))
-    return pred
-
-def draw_radar_chart(player_stats, labels):
-    num_vars = len(labels)
-    angles = [n / float(num_vars) * 2 * np.pi for n in range(num_vars)]
-    angles += angles[:1]
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-    for name, stats in player_stats.items():
-        vals = stats + stats[:1]
-        ax.plot(angles, vals, linewidth=2, label=name)
-        ax.fill(angles, vals, alpha=0.1)
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels)
-    plt.legend(loc='upper right', bbox_to_anchor=(1.1, 1.1))
-    return fig
 
 st.title("🏀 NBA MVP Prediction Dashboard")
-st.caption("Interactive MVP prediction app with leaderboard, player comparison, and what-if analysis.")
+st.caption("Train on historical MVP data and score new players from an uploaded CSV or api_data.csv.")
 
 try:
     bundle = train_all_models()
@@ -468,116 +495,61 @@ except Exception as e:
     st.error(f"Setup error: {e}")
     st.stop()
 
-df = bundle["df"]
-season_col = bundle["season_col"]
-player_col = bundle["player_col"]
-team_col = bundle["team_col"]
 results_df = bundle["results_df"]
 
 with st.sidebar:
     st.header("Controls")
     available_models = list(bundle["predictions"].keys())
-    selected_model = st.selectbox("Choose model", available_models, index=len(available_models)-1)
+    selected_model = st.selectbox("Choose model", available_models, index=len(available_models) - 1)
     selected_test_season = st.selectbox("Choose test season", bundle["test_seasons"], index=len(bundle["test_seasons"]) - 1)
-    top_n = st.slider("Top N leaderboard", 5, 20, 10)
+    top_n = st.slider("Top N leaderboard", 5, 25, 10)
+    uploaded_inference_file = st.file_uploader("Upload CSV for inference", type=["csv"])
 
-tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Leaderboard", "Head-to-Head", "Simulator"])
+
+tab1, tab2, tab3 = st.tabs(["Overview", "Historical Test Leaderboard", "Inference Predictions"])
 
 with tab1:
     c1, c2, c3, c4 = st.columns(4)
     best_row = results_df.iloc[0]
-    
-    c1.metric(
-        label="Top Model", 
-        value=best_row["Model"], 
-        help="The algorithm that achieved the lowest error during validation."
-    )
-    c2.metric(
-        label="Min RMSE", 
-        value=f"{best_row['RMSE']:.2f}", 
-        help="Root Mean Squared Error: The average 'miss' in points. Lower is better."
-    )
-    c3.metric(
-        label="Top1 Acc", 
-        value=f"{results_df['Top1 Acc'].max():.2f}", 
-        help="How often the model correctly predicts the actual MVP winner."
-    )
-    c4.metric(
-        label="Avg R²", 
-        value=f"{results_df['R²'].mean():.2f}", 
-        help="How much of the voting data variance the AI successfully explains (Goal: 1.0)."
-    )
+    c1.metric("Top Model", best_row["Model"])
+    c2.metric("Min RMSE", f"{best_row['RMSE']:.2f}")
+    c3.metric("Top1 Acc", f"{results_df['Top1 Acc'].max():.2f}")
+    c4.metric("Avg R²", f"{results_df['R²'].mean():.2f}")
 
-    st.subheader("Model Error Comparison (RMSE)")
+    st.subheader("Historical Test Performance")
     st.dataframe(results_df, use_container_width=True)
 
     fig = plt.figure(figsize=(10, 4))
-    colors = ['#1E3A8A' if x == results_df['RMSE'].min() else '#D1D5DB' for x in results_df['RMSE']]
+    colors = ["#1E3A8A" if x == results_df["RMSE"].min() else "#D1D5DB" for x in results_df["RMSE"]]
     plt.bar(results_df["Model"], results_df["RMSE"], color=colors)
     plt.xticks(rotation=45, ha="right")
     st.pyplot(fig)
 
 with tab2:
-    leaderboard_df, full_season_df = get_season_leaderboard(bundle, selected_model, selected_test_season)
-    st.subheader(f"MVP Forecast — {selected_test_season}")
-
-    st.dataframe(
-        leaderboard_df.head(top_n),
-        column_config={
-            "Predicted_Pts_Won": st.column_config.ProgressColumn(
-                "Score", min_value=0, max_value=float(leaderboard_df["Predicted_Pts_Won"].max()), format="%.1f"
-            ),
-            "Win_Rate": st.column_config.NumberColumn("Win %", format="%.3f"),
-        },
-        use_container_width=True, hide_index=True
-    )
+    leaderboard_df, _ = get_season_leaderboard(bundle, selected_model, selected_test_season)
+    st.subheader(f"Historical MVP Forecast — {selected_test_season}")
+    st.dataframe(leaderboard_df.head(top_n), use_container_width=True, hide_index=True)
 
 with tab3:
-    st.subheader("Skill Comparison (Normalized)")
-    p_names = sorted(df[df[season_col] == selected_test_season][player_col].unique())
-    p1 = st.selectbox("Player A", p_names, index=0)
-    p2 = st.selectbox("Player B", p_names, index=min(1, len(p_names)-1))
+    st.subheader("Predictions for uploaded CSV or api_data.csv")
+    st.caption("Upload a CSV in the sidebar, then click Run Predictions.")
+    run_inference = st.button("Run Predictions", type="primary")
 
-    stats_list = ["PPG", "RPG", "APG", "Win_Rate", "TS%"]
-    p1_vals = [df[df[player_col]==p1][s].mean() / df[s].max() for s in stats_list]
-    p2_vals = [df[df[player_col]==p2][s].mean() / df[s].max() for s in stats_list]
-    
-    st.pyplot(draw_radar_chart({p1: p1_vals, p2: p2_vals}, stats_list))
+    if run_inference:
+        pred_df, pred_error, source_name = predict_inference_data(bundle, selected_model, uploaded_inference_file)
 
-with tab4:
-    st.subheader("What-if MVP Predictor")
-    with st.expander("Step 1: Choose Baseline"):
-        base_choice = st.selectbox("Existing profile", ["Average"] + sorted(df[player_col].unique()))
-        base_row = None if base_choice == "Average" else df[df[player_col] == base_choice].iloc[0]
-
-    def default_for(col_name, fallback):
-        if base_row is not None and col_name in base_row.index: return float(base_row[col_name])
-        return fallback
-
-    c1, c2, c3 = st.columns(3)
-    overrides = {}
-    with c1:
-        overrides["PPG"] = st.number_input("PPG", 0.0, 50.0, default_for("PPG", 20.0))
-        overrides["APG"] = st.number_input("APG", 0.0, 20.0, default_for("APG", 5.0))
-    with c2:
-        overrides["Win_Rate"] = st.slider("Win Rate", 0.0, 1.0, default_for("Win_Rate", 0.5))
-        overrides["TS%"] = st.slider("TS%", 0.3, 0.8, default_for("TS%", 0.55))
-    with c3:
-        overrides["G"] = st.slider("Games", 0, 82, int(default_for("G", 70)))
-
-    if st.button("Predict Score"):
-        sample = build_simulator_input(bundle, base_row, overrides)
-        if selected_model == "Proposed Stacked Ensemble":
-            pred = predict_with_stacked_simulator(bundle, sample)
+        if pred_error:
+            st.error(pred_error)
         else:
-            sim_model, _ = fit_model_for_simulator(bundle, selected_model)
-            pred = float(np.clip(sim_model.predict(sample)[0], 0, None))
-        st.success(f"Predicted Points: {pred:.2f}")
-        if pred > 300:
-            st.info("This profile looks like a very strong MVP-level season.")
-        elif pred > 100:
-            st.info("This profile looks like a serious MVP candidate.")
-        elif pred > 0:
-            st.info("This profile may receive some MVP votes.")
-        else:
-            st.info("This profile is unlikely to receive MVP votes based on the model.")
+            st.success(f"Scored {len(pred_df)} players from {source_name} using {selected_model}.")
+            st.dataframe(pred_df.head(top_n), use_container_width=True, hide_index=True)
+
+            csv_bytes = pred_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="Download full predictions CSV",
+                data=csv_bytes,
+                file_name="inference_predictions.csv",
+                mime="text/csv",
+            )
+    else:
+        st.info("Choose a model, upload a CSV if needed, and click Run Predictions.")
