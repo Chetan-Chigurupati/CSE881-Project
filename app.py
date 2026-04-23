@@ -402,7 +402,7 @@ def train_all_models():
 def predict_inference_data(bundle, selected_model, uploaded_file=None):
     inference_df, source_name = read_inference_source(uploaded_file)
     if inference_df is None:
-        return None, "Upload a CSV for inference or place api_data.csv next to the app.", None
+        return None, "Upload a CSV for inference.", None
 
     inference_df = engineer_features(inference_df)
     infer_player_col = find_first_existing(inference_df, PLAYER_CANDIDATES)
@@ -487,7 +487,7 @@ def get_season_leaderboard(bundle, model_name, selected_season):
 
 
 st.title("🏀 NBA MVP Prediction Dashboard")
-st.caption("Train on historical MVP data and score new players from an uploaded CSV or api_data.csv.")
+st.caption("Train on historical MVP data and score new players from an uploaded CSV.")
 
 try:
     bundle = train_all_models()
@@ -531,7 +531,7 @@ with tab2:
     st.dataframe(leaderboard_df.head(top_n), use_container_width=True, hide_index=True)
 
 with tab3:
-    st.subheader("Predictions for uploaded CSV or api_data.csv")
+    st.subheader("Predictions for uploaded CSV")
     st.caption("Upload a CSV in the sidebar, then click Run Predictions.")
     run_inference = st.button("Run Predictions", type="primary")
 
