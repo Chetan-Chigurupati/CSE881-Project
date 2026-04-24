@@ -1,79 +1,69 @@
+# NBA MVP Prediction System
 
-# NBA MVP Prediction Dashboard Prototype
+An end-to-end machine learning project for predicting NBA Most Valuable Player (MVP) vote totals from historical player and team statistics. Built as a class project for CSE 881: Data Mining at Michigan State University.
 
-This repository contains an interactive Streamlit prototype for NBA MVP vote prediction. It is designed to satisfy the prototype development requirement by providing a web-based interface that dynamically updates predictions and visualizations.
+**Live demo:** https://nba-mvp-predictor-cse881.streamlit.app
 
-## Features
+## Overview
 
-- season selector for held-out test seasons
-- model selector for multiple trained regressors
-- dynamic MVP leaderboard with predicted and actual rankings
-- player comparison panel
-- what-if simulator for adjusting player statistics and predicting MVP vote points in real time
+The project predicts each player's MVP voting points (`Pts Won`) for a given season using regression models trained on 42 seasons of NBA data (1980–2021). It includes:
 
-## Why this counts as prototype development
+- A full modeling pipeline with 9 models (dummy baseline, linear baselines, five tree-based ensembles, and a stacked ensemble meta-model)
+- An adaptive weighted ensemble with disagreement-based gating as an alternative ensemble approach
+- Live 2025–26 season data pulled from the `nba_api` package for out-of-sample inference
+- An interactive Streamlit dashboard deployed to Streamlit Community Cloud
 
-This app is not a static notebook visualization. It is an interactive web interface where users can:
-- query results by season
-- switch between models
-- compare players dynamically
-- change input features and get new predictions instantly
+## Live Demo
 
-That makes it a valid prototype under the project requirement.
+The interactive dashboard is hosted at https://nba-mvp-predictor-cse881.streamlit.app
 
-## Files
+**First-visit note:** The app retrains all nine models on first load, which can take 5–10 minutes. Subsequent visits are cached and load in seconds. If the app appears stuck on `Running train_all_models()`, please wait — it is training, not frozen.
 
-- `app.py` — main Streamlit application
-- `requirements.txt` — Python dependencies
-- `README.md` — project instructions
-- `cleaned_data.csv` — expected dataset file placed next to `app.py`
+The dashboard includes:
 
-## How to run locally
+- Season selector for held-out test seasons
+- Model selector across all trained regressors
+- MVP leaderboard with predicted and actual rankings side-by-side
+- Player comparison panel
+- What-if simulator for adjusting player statistics and seeing predicted vote totals update in real time
 
-1. Put `cleaned_data.csv` in the same folder as `app.py`
-2. Install dependencies
-3. Start Streamlit
+## Repository Structure
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
 ```
-
-## Expected columns
-
-The app expects:
-- `Pts Won` as the target column
-- one season column like `Year` or `Season`
-- one player column like `Player`
-
-It also works best if the dataset contains basketball features such as:
-- `PPG`
-- `APG`
-- `RPG`
-- `W`
-- `L`
-- `G`
-- `TS%`
-- `Age`
-
-## Suggested GitHub repo structure
-
-```text
 .
-├── app.py
-├── requirements.txt
-├── README.md
-└── cleaned_data.csv
+├── app.py                                         # Streamlit dashboard
+├── 881_Project_Notebook.ipynb                     # Main modeling notebook (baselines)
+├── 881_Project_Notebook_Stacking_Ensemble.ipynb   # Stacked ensemble pipeline
+├── weighted_model.py                              # Adaptive weighted ensemble
+├── nba_api.ipynb                                  # 2025–26 data collection script
+├── cleaned_data.csv                               # Kaggle training dataset (1980–2021)
+├── api_data.csv                                   # Current-season data pulled from nba_api
+├── requirements.txt                               # Python dependencies
+└── README.md
 ```
 
-## Deployment options
+## How to Run Locally
 
-You can deploy this app using:
-- Streamlit Community Cloud
-- Render
-- Hugging Face Spaces
-- local demo on your machine
+1. Clone the repository
+2. Install dependencies:
+```bash
+   pip install -r requirements.txt
+```
+3. Launch the Streamlit dashboard:
+```bash
+   streamlit run app.py
+```
+4. Or run the notebooks directly in Jupyter to reproduce the modeling results:
+```bash
+   jupyter notebook 881_Project_Notebook_Stacking_Ensemble.ipynb
+```
 
-## Author
+## Data Sources
 
-Yash Bhawarkar
+- **Training data:** [NBA Stats since 1980](https://www.kaggle.com/datasets/javigallego/stats-nba) on Kaggle (17,976 player-season records, 45 columns, 1980–2021)
+- **Current-season data:** [`nba_api`](https://github.com/swar/nba_api) Python package for 2025–26 live inference
+
+## Authors
+
+Adhyan Negi, Arhan Mulay, Chetan Chigurupati, Yash Bhawarkar
+Michigan State University — CSE 881, Spring 2026
